@@ -13,19 +13,22 @@ tokenizer = BertTokenizer.from_pretrained("shibing624/macbert4csc-base-chinese")
 model = BertForMaskedLM.from_pretrained("shibing624/macbert4csc-base-chinese")
 
 
-def ai_text(text):
+def ai_text(texts):
+    
+    text_tokens = None
     with torch.no_grad():
-        outputs = model(**tokenizer([text], padding=True, return_tensors='pt'))
+        text_tokens = tokenizer(texts, padding=True, return_tensors='pt')
+        outputs = model(**text_tokens)
 
     def get_errors(corrected_text, origin_text):
         sub_details = []
         for i, ori_char in enumerate(origin_text):
-            if ori_char in [' ', '“', '”', '‘', '’', '琊', '\n', '…', '—', '擤']:
+            if ori_char in [' ', '“', '”', '‘', '’', '\n', '…', '—', '擤']:
                 # add unk word
                 corrected_text = corrected_text[:i] + ori_char + corrected_text[i:]
                 continue
             if i >= len(corrected_text):
-                continue
+                break
             if ori_char != corrected_text[i]:
                 if ori_char.lower() == corrected_text[i]:
                     # pass english upper char
@@ -35,11 +38,17 @@ def ai_text(text):
         sub_details = sorted(sub_details, key=operator.itemgetter(2))
         return corrected_text, sub_details
 
-    _text = tokenizer.decode(torch.argmax(outputs.logits[0], dim=-1), skip_special_tokens=True).replace(' ', '')
-    corrected_text = _text[:len(text)]
-    corrected_text, details = get_errors(corrected_text, text)
-    print(text, ' => ', corrected_text, details)
-    return corrected_text, details
+    result = []
+    i = 0
+    for ids, text in zip(outputs.logits, texts):
+        
+        _text = tokenizer.decode((torch.argmax(ids, dim=-1) * text_tokens.attention_mask[i]), skip_special_tokens=True).replace(' ', '')
+        corrected_text, details = get_errors(_text, text)
+        result.append((corrected_text, details))
+        
+        print(text, ' => ', corrected_text, details)
+        i += 1
+    return result
 
 
 if __name__ == '__main__':
